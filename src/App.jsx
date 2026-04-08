@@ -48,6 +48,9 @@ export default function App() {
   const [payForm, setPayForm] = useState({ bookingId: "", amount: "", method: "cash", notes: "" });
   const [payMonth, setPayMonth] = useState(() => { const d = new Date(); return `${d.getFullYear()}-${(d.getMonth() + 1).toString().padStart(2, "0")}`; });
   const [payDay, setPayDay] = useState(todayStr());
+  const [showLinksModal, setShowLinksModal] = useState(false);
+  const [showCalLink, setShowCalLink] = useState("");
+  const [showWaLink, setShowWaLink] = useState("");
 
   useEffect(() => {
     try {
@@ -57,7 +60,8 @@ export default function App() {
     setLoading(false);
   }, []);
 
-  const save = (nd) => { setData(nd); try { localStorage.setItem(sk("data"), JSON.stringify(nd)); } catch (e) {} };
+  const saveToStorage = (nd) => { try { localStorage.setItem(sk("data"), JSON.stringify(nd)); } catch (e) {} };
+  const save = (nd) => { setData(nd); saveToStorage(nd); };
   const flash = (msg, type = "ok") => { setToast({ msg, type }); setTimeout(() => setToast(null), 2500); };
 
   const updateClient = (phone, name, serviceNames, price, date) => {
@@ -76,13 +80,28 @@ export default function App() {
     const price = autoPrice;
     if (editId) {
       const bookings = data.bookings.map(b => b.id === editId ? { ...b, name: form.name, phone: form.phone, date: form.date, time: form.time, services: form.services, notes: form.notes, price } : b);
-      save({ ...data, bookings }); flash("Updated!"); setEditId(null);
+      const nd = { ...data, bookings };
+      save(nd); flash("Updated!"); setEditId(null);
     } else {
       const booking = { id: Date.now().toString(36) + Math.random().toString(36).slice(2, 5), name: form.name, phone: form.phone, date: form.date, time: form.time, services: form.services, notes: form.notes, price, status: "confirmed", reminderSent: false, createdAt: new Date().toISOString() };
       const clients = updateClient(form.phone, form.name, form.services, 0, form.date);
-      save({ ...data, bookings: [...data.bookings, booking], clients });
-      openWA(form.phone, getConfMsg(booking)); setTimeout(() => openCal(booking), 1200);
-      flash("Booked! WhatsApp & Calendar opened");
+      const nd = { ...data, bookings: [...data.bookings, booking], clients };
+      save(nd);
+
+      const totalMins = booking.services.reduce((s, sn) => s + (SERVICES.find(sv => sv.name === sn)?.duration || 60), 0);
+      const start = new Date(`${booking.date}T${booking.time}:00`);
+      const end = new Date(start.getTime() + totalMins * 60000);
+      const fmtCal = (d) => d.toISOString().replace(/[-:]/g, "").split(".")[0];
+      const calUrl = `https://calendar.google.com/calendar/render?action=TEMPLATE&text=${encodeURIComponent("Nail Villa - " + booking.name)}&dates=${fmtCal(start)}/${fmtCal(end)}&details=${encodeURIComponent(`Client: ${booking.name}\nPhone: ${booking.phone}\nServices: ${booking.services.join(", ")}`)}&location=${encodeURIComponent("The Nail Villa, Pimpri-Chinchwad, Pune")}`;
+
+      const waNum = booking.phone.replace(/\D/g, "");
+      const waFull = waNum.length === 10 ? "91" + waNum : waNum;
+      const waUrl = `https://wa.me/${waFull}?text=${encodeURIComponent(getConfMsg(booking))}`;
+
+      setShowCalLink(calUrl);
+      setShowWaLink(waUrl);
+      setShowLinksModal(true);
+      flash("Booked successfully!");
     }
     setForm({ name: "", phone: "", date: "", time: "", services: [], notes: "", price: "" });
   };
@@ -186,6 +205,17 @@ export default function App() {
   return (
     <div style={{ fontFamily: "'Segoe UI', -apple-system, sans-serif", color: "#333", maxWidth: 520, margin: "0 auto", padding: "0 12px 2rem", background: "#FDF8F5", minHeight: "100vh" }}>
       {toast && <div style={{ position: "fixed", top: 16, left: "50%", transform: "translateX(-50%)", padding: "10px 24px", borderRadius: 14, fontSize: 13, fontWeight: 600, zIndex: 999, background: toast.type === "err" ? "#FCE8E8" : "#E8F4ED", color: toast.type === "err" ? "#C0392B" : "#2D6A4F" }}>{toast.msg}</div>}
+
+      {showLinksModal && <div style={{ position: "fixed", top: 0, left: 0, right: 0, bottom: 0, background: "rgba(0,0,0,0.5)", zIndex: 1000, display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }}>
+        <div style={{ background: "#fff", borderRadius: 20, padding: "28px 24px", maxWidth: 360, width: "100%", textAlign: "center" }}>
+          <div style={{ fontSize: 40, marginBottom: 8 }}>✅</div>
+          <div style={{ fontSize: 18, fontWeight: 700, fontFamily: "'Georgia', serif", color: "#333", marginBottom: 4 }}>Booking confirmed!</div>
+          <div style={{ fontSize: 13, color: "#888", marginBottom: 20 }}>Now send confirmation & add to calendar</div>
+          <a href={showWaLink} target="_blank" rel="noopener noreferrer" style={{ display: "block", padding: "14px", borderRadius: 12, background: "#25D366", color: "#fff", fontSize: 14, fontWeight: 600, textDecoration: "none", marginBottom: 10 }}>📩 Send WhatsApp Confirmation</a>
+          <a href={showCalLink} target="_blank" rel="noopener noreferrer" style={{ display: "block", padding: "14px", borderRadius: 12, background: "#4285F4", color: "#fff", fontSize: 14, fontWeight: 600, textDecoration: "none", marginBottom: 10 }}>📅 Add to Google Calendar</a>
+          <button onClick={() => setShowLinksModal(false)} style={{ padding: "12px", borderRadius: 12, border: "1px solid #e8e0dc", background: "#fff", color: "#888", fontSize: 14, fontWeight: 500, cursor: "pointer", width: "100%" }}>Done</button>
+        </div>
+      </div>}
 
       <div style={{ textAlign: "center", padding: "20px 0 6px" }}>
         <div style={{ fontSize: 11, fontWeight: 600, letterSpacing: 4, color: "#999", marginBottom: 4 }}>✦ STUDIO MANAGER ✦</div>
