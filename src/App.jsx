@@ -301,7 +301,7 @@ export default function App() {
             </div>
           </div>
 
-          <Btn onClick={handleBook} disabled={!form.name || !form.phone || !form.date || !form.time || form.services.length === 0}>{editId ? "Update Booking" : "Book & Send WhatsApp + Calendar"}</Btn>
+          <Btn onClick={handleBook} disabled={!form.date || !form.time || form.services.length === 0}>{editId ? "Update Booking" : "Book & Send WhatsApp + Calendar"}</Btn>
           {editId && <div style={{ marginTop: 8 }}><Btn variant="outline" onClick={() => { setEditId(null); setForm({ name: "", phone: "", date: "", time: "", services: [], notes: "", price: "" }); }}>Cancel Edit</Btn></div>}
         </div>}
 
