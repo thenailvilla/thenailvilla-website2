@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 
 const SERVICES = [
   { id: 1, name: "Nail Extensions", duration: 120, price: 2500, icon: "💅" },
@@ -51,6 +51,8 @@ export default function App() {
   const [showLinksModal, setShowLinksModal] = useState(false);
   const [showCalLink, setShowCalLink] = useState("");
   const [showWaLink, setShowWaLink] = useState("");
+  const phoneRef = useRef(null);
+  const nameRef = useRef(null);
 
   useEffect(() => {
     try {
@@ -76,15 +78,19 @@ export default function App() {
   const autoPrice = form.services.reduce((s, sn) => s + (SERVICES.find(sv => sv.name === sn)?.price || 0), 0);
 
   const handleBook = () => {
-    if (!form.name || !form.phone || !form.date || !form.time || form.services.length === 0) { flash("Fill all fields", "err"); return; }
+    const currentName = nameRef.current ? nameRef.current.value : form.name;
+    const currentPhone = phoneRef.current ? phoneRef.current.value.replace(/[^0-9+]/g, "") : form.phone;
+    const formData = { ...form, name: currentName, phone: currentPhone };
+
+    if (!formData.name || !formData.phone || !formData.date || !formData.time || formData.services.length === 0) { flash("Fill all fields", "err"); return; }
     const price = autoPrice;
     if (editId) {
-      const bookings = data.bookings.map(b => b.id === editId ? { ...b, name: form.name, phone: form.phone, date: form.date, time: form.time, services: form.services, notes: form.notes, price } : b);
+      const bookings = data.bookings.map(b => b.id === editId ? { ...b, name: formData.name, phone: formData.phone, date: formData.date, time: formData.time, services: formData.services, notes: formData.notes, price } : b);
       const nd = { ...data, bookings };
       save(nd); flash("Updated!"); setEditId(null);
     } else {
-      const booking = { id: Date.now().toString(36) + Math.random().toString(36).slice(2, 5), name: form.name, phone: form.phone, date: form.date, time: form.time, services: form.services, notes: form.notes, price, status: "confirmed", reminderSent: false, createdAt: new Date().toISOString() };
-      const clients = updateClient(form.phone, form.name, form.services, 0, form.date);
+      const booking = { id: Date.now().toString(36) + Math.random().toString(36).slice(2, 5), name: formData.name, phone: formData.phone, date: formData.date, time: formData.time, services: formData.services, notes: formData.notes, price, status: "confirmed", reminderSent: false, createdAt: new Date().toISOString() };
+      const clients = updateClient(formData.phone, formData.name, formData.services, 0, formData.date);
       const nd = { ...data, bookings: [...data.bookings, booking], clients };
       save(nd);
 
@@ -104,6 +110,8 @@ export default function App() {
       flash("Booked successfully!");
     }
     setForm({ name: "", phone: "", date: "", time: "", services: [], notes: "", price: "" });
+    if (nameRef.current) nameRef.current.value = "";
+    if (phoneRef.current) phoneRef.current.value = "";
   };
 
   const completeBooking = (b) => {
@@ -245,8 +253,14 @@ export default function App() {
 
         {tab === "book" && <div>
           <SectionTitle sub={editId ? "Update this appointment" : "Create a new appointment"}>{editId ? "Edit Booking" : "New Booking"}</SectionTitle>
-          <Input label="WhatsApp number" placeholder="10-digit number" type="tel" value={form.phone} onChange={e => { const v = e.target.value.replace(/[^0-9+]/g, ""); setForm({ ...form, phone: v }); if (v.replace(/\D/g, "").length >= 10) fillFromPhone(v); }} />
-          <Input label="Client name" placeholder="Enter name" value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} />
+          <div style={{ marginBottom: 14 }}>
+            <label style={{ fontSize: 12, fontWeight: 600, color: "#888", marginBottom: 6, display: "block", textTransform: "uppercase", letterSpacing: 0.8 }}>WhatsApp number</label>
+            <input ref={phoneRef} key="phone-input" style={{ width: "100%", padding: "12px 14px", borderRadius: 12, border: "1px solid #e8e0dc", fontSize: 16, background: "#fff", color: "#333", boxSizing: "border-box", outline: "none" }} placeholder="10-digit number" type="tel" inputMode="numeric" autoComplete="off" autoCorrect="off" autoCapitalize="off" spellCheck="false" />
+          </div>
+          <div style={{ marginBottom: 14 }}>
+            <label style={{ fontSize: 12, fontWeight: 600, color: "#888", marginBottom: 6, display: "block", textTransform: "uppercase", letterSpacing: 0.8 }}>Client name</label>
+            <input ref={nameRef} key="name-input" style={{ width: "100%", padding: "12px 14px", borderRadius: 12, border: "1px solid #e8e0dc", fontSize: 16, background: "#fff", color: "#333", boxSizing: "border-box", outline: "none" }} placeholder="Enter full name" type="text" autoComplete="off" autoCorrect="off" spellCheck="false" />
+          </div>
 
           <div style={{ marginBottom: 14 }}>
             <label style={{ fontSize: 12, fontWeight: 600, color: "#888", marginBottom: 8, display: "block", textTransform: "uppercase", letterSpacing: 0.8 }}>Services</label>
