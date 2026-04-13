@@ -7,34 +7,43 @@ const SERVICES = [
   { id: 4, name: "Overlays", duration: 90, price: 1800, icon: "💎" },
   { id: 5, name: "Hand Gel Polish", duration: 60, price: 1200, icon: "🤚" },
   { id: 6, name: "Feet Gel Polish", duration: 60, price: 1200, icon: "🦶" },
+  { id: 7, name: "Refilling", duration: 90, price: 1800, icon: "🔄" },
 ];
 
 const MAP_LINK = "https://maps.app.goo.gl/afo8uQNsUaKDxkqt8";
-const sk = (k) => `nv3:${k}`;
+const sk = (k) => `nv4:${k}`;
 const fmtDateNice = (d) => { const dt = new Date(d + "T00:00:00"); return `${dt.toLocaleDateString("en-IN", { weekday: "long" })} ${dt.getDate()} ${dt.toLocaleDateString("en-IN", { month: "long" })}, ${dt.getFullYear()}`; };
 const fmtDateShort = (d) => new Date(d + "T00:00:00").toLocaleDateString("en-IN", { day: "numeric", month: "short" });
 const fmtTime = (t) => { const [h, m] = t.split(":").map(Number); return `${h % 12 || 12}:${m.toString().padStart(2, "0")} ${h >= 12 ? "PM" : "AM"}`; };
 const fmtDur = (m) => m >= 60 ? `${Math.floor(m / 60)}h${m % 60 ? ` ${m % 60}m` : ""}` : m + "m";
 const todayStr = () => new Date().toISOString().split("T")[0];
+const tomorrowStr = () => { const d = new Date(); d.setDate(d.getDate() + 1); return d.toISOString().split("T")[0]; };
 const daysAgo = (n) => { const d = new Date(); d.setDate(d.getDate() - n); return d.toISOString().split("T")[0]; };
 const firstName = (name) => (name || "").trim().split(/\s+/)[0];
 
+const localCalFmt = (dateStr, timeStr) => {
+  const [y, mo, d] = dateStr.split("-").map(Number);
+  const [h, m] = timeStr.split(":").map(Number);
+  const p = (n) => n.toString().padStart(2, "0");
+  return `${y}${p(mo)}${p(d)}T${p(h)}${p(m)}00`;
+};
+
 const getConfMsg = (b) => { const dur = b.services.reduce((s, sn) => s + (SERVICES.find(sv => sv.name === sn)?.duration || 0), 0); return `Hi ${firstName(b.name)}! 🌸✨\n\nYour appointment at *The Nail Villa* has been successfully booked! 💅🎀\n\n*Day & Date:* ${fmtDateNice(b.date)} 📅\n*Time:* ${fmtTime(b.time)} ⏰\n*Service:* ${b.services.join(", ")} 💎\n*Duration:* ${dur} mins ⏱\n\nKindly arrive on time so we can give you the best service 🥰\n\nIf you need to reschedule, please inform us at least a few hours in advance 🙏\n\nWe look forward to pampering you! 💖💅✨\n\nThank you 🌷\n${MAP_LINK}`; };
-const getRemMsg = (b) => `Hi ${firstName(b.name)}! 🌸💕\n\nThis is a gentle reminder that you have an appointment at *The Nail Villa* today at *${fmtTime(b.time)}* ⏰ for your *${b.services.join(", ")}* 💅✨\n\nKindly confirm if you'll be able to make it 🥰\n\nLooking forward to seeing you! 💖💎`;
+const getRemMsg = (b, isTomorrow) => `Hi ${firstName(b.name)}! 🌸💕\n\nThis is a gentle reminder that you have an appointment at *The Nail Villa* ${isTomorrow ? "tomorrow" : "today"} at *${fmtTime(b.time)}* ⏰ for your *${b.services.join(", ")}* 💅✨\n\nKindly confirm if you'll be able to make it 🥰\n\nLooking forward to seeing you! 💖💎`;
 const getTyMsg = (b) => `Hi ${firstName(b.name)}, 💖🌸\n\nThank you for visiting The Nail Villa 💅✨\nIt was a pleasure having you! 🥰\nHope you loved your nails—see you again soon 💕🎀\n\nDo share your experience with your besties! 👯‍♀️💖`;
 const getBookAgainMsg = (c) => `Hi ${firstName(c.name)}! 🌸💕\n\nWe miss you at *The Nail Villa*! 🥺💖 It's been a while since your last visit.\n\nWould you like to book your next appointment? We have some amazing new designs waiting for you! 💅✨🎨\n\nCome get pampered! 👑💎\n\n${MAP_LINK}`;
 const getBdayMsg = (c) => `Happy Birthday ${firstName(c.name)}! 🎂🎀🌸\n\nWishing you a wonderful day filled with love & sparkle from all of us at *The Nail Villa*! 💖✨🥳\n\nAs a birthday treat, enjoy a special discount on your next visit! 🎁💅\n\nCome pamper yourself queen! 👑💕\n\n${MAP_LINK}`;
 
 const openWA = (phone, msg) => { const num = phone.replace(/\D/g, ""); window.open(`https://wa.me/${num.length === 10 ? "91" + num : num}?text=${encodeURIComponent(msg)}`, "_blank"); };
 
-const INIT = { bookings: [], clients: [], expenses: [], waitlist: [], payments: [] };
+const INIT = { bookings: [], clients: [], expenses: [], waitlist: [] };
 
 export default function App() {
   const [tab, setTab] = useState("book");
   const [data, setData] = useState(INIT);
   const [loading, setLoading] = useState(true);
   const [toast, setToast] = useState(null);
-  const [form, setForm] = useState({ date: "", time: "", services: [], notes: "", price: "" });
+  const [form, setForm] = useState({ date: "", time: "", services: [], notes: "" });
   const [editId, setEditId] = useState(null);
   const [filterDate, setFilterDate] = useState(todayStr());
   const [searchQ, setSearchQ] = useState("");
@@ -44,9 +53,6 @@ export default function App() {
   const [dashPeriod, setDashPeriod] = useState("week");
   const [subTab, setSubTab] = useState("");
   const [waitForm, setWaitForm] = useState({ name: "", phone: "", service: "", notes: "" });
-  const [payForm, setPayForm] = useState({ bookingId: "", amount: "", method: "cash", notes: "" });
-  const [payMonth, setPayMonth] = useState(() => { const d = new Date(); return `${d.getFullYear()}-${(d.getMonth() + 1).toString().padStart(2, "0")}`; });
-  const [payDay, setPayDay] = useState(todayStr());
   const [showLinksModal, setShowLinksModal] = useState(false);
   const [showCalLink, setShowCalLink] = useState("");
   const [showWaLink, setShowWaLink] = useState("");
@@ -74,30 +80,33 @@ export default function App() {
   const toggleSvc = (svc) => setForm(f => ({ ...f, services: f.services.includes(svc.name) ? f.services.filter(s => s !== svc.name) : [...f.services, svc.name] }));
   const totalMin = form.services.reduce((s, sn) => s + (SERVICES.find(sv => sv.name === sn)?.duration || 0), 0);
   const autoPrice = form.services.reduce((s, sn) => s + (SERVICES.find(sv => sv.name === sn)?.price || 0), 0);
-
   const fillFromPhone = (phone) => { const c = data.clients.find(cl => cl.phone === phone); if (c && nameRef.current) nameRef.current.value = c.name; };
 
   const handleBook = () => {
     const bName = nameRef.current ? nameRef.current.value.trim() : "";
     const bPhone = phoneRef.current ? phoneRef.current.value.replace(/[^0-9+]/g, "").trim() : "";
-
     if (!bName || !bPhone || !form.date || !form.time || form.services.length === 0) { flash("Fill all fields", "err"); return; }
     if (bPhone.replace(/\D/g, "").length < 10) { flash("Enter valid 10-digit number", "err"); return; }
-
     const price = autoPrice;
     if (editId) {
       const bookings = data.bookings.map(b => b.id === editId ? { ...b, name: bName, phone: bPhone, date: form.date, time: form.time, services: form.services, price } : b);
       save({ ...data, bookings }); flash("Updated!"); setEditId(null);
     } else {
-      const booking = { id: Date.now().toString(36) + Math.random().toString(36).slice(2, 5), name: bName, phone: bPhone, date: form.date, time: form.time, services: form.services, notes: "", price, status: "confirmed", reminderSent: false, createdAt: new Date().toISOString() };
+      const booking = { id: Date.now().toString(36) + Math.random().toString(36).slice(2, 5), name: bName, phone: bPhone, date: form.date, time: form.time, services: form.services, price, status: "confirmed", reminderSent: false, createdAt: new Date().toISOString() };
       const clients = updateClient(bPhone, bName, form.services, 0, form.date);
       save({ ...data, bookings: [...data.bookings, booking], clients });
 
       const totalMins = booking.services.reduce((s, sn) => s + (SERVICES.find(sv => sv.name === sn)?.duration || 60), 0);
-      const start = new Date(`${booking.date}T${booking.time}:00`);
-      const end = new Date(start.getTime() + totalMins * 60000);
-      const fmtCal = (d) => d.toISOString().replace(/[-:]/g, "").split(".")[0];
-      const calUrl = `https://calendar.google.com/calendar/render?action=TEMPLATE&text=${encodeURIComponent("Nail Villa - " + booking.name)}&dates=${fmtCal(start)}/${fmtCal(end)}&details=${encodeURIComponent(`Client: ${booking.name}\nPhone: ${booking.phone}\nServices: ${booking.services.join(", ")}`)}&location=${encodeURIComponent("The Nail Villa, Pimpri-Chinchwad, Pune")}`;
+      const [eh, em] = booking.time.split(":").map(Number);
+      const endTotalMins = eh * 60 + em + totalMins;
+      const endH = Math.floor(endTotalMins / 60);
+      const endM = endTotalMins % 60;
+      const endTime = `${endH}:${endM.toString().padStart(2, "0")}`;
+
+      const calStart = localCalFmt(booking.date, booking.time);
+      const calEnd = localCalFmt(booking.date, endTime);
+      const calUrl = `https://calendar.google.com/calendar/render?action=TEMPLATE&text=${encodeURIComponent("Nail Villa - " + booking.name)}&dates=${calStart}/${calEnd}&details=${encodeURIComponent(`Client: ${booking.name}\nPhone: ${booking.phone}\nServices: ${booking.services.join(", ")}`)}&location=${encodeURIComponent("The Nail Villa, Pimpri-Chinchwad, Pune")}`;
+
       const waNum = booking.phone.replace(/\D/g, "");
       const waFull = waNum.length === 10 ? "91" + waNum : waNum;
       const waUrl = `https://wa.me/${waFull}?text=${encodeURIComponent(getConfMsg(booking))}`;
@@ -107,7 +116,7 @@ export default function App() {
       setShowLinksModal(true);
       flash("Booked successfully!");
     }
-    setForm({ date: "", time: "", services: [], notes: "", price: "" });
+    setForm({ date: "", time: "", services: [], notes: "" });
     if (nameRef.current) nameRef.current.value = "";
     if (phoneRef.current) phoneRef.current.value = "";
   };
@@ -121,7 +130,7 @@ export default function App() {
   const markStatus = (id, status) => { save({ ...data, bookings: data.bookings.map(b => b.id === id ? { ...b, status } : b) }); };
   const deleteBooking = (id) => { save({ ...data, bookings: data.bookings.filter(b => b.id !== id) }); flash("Deleted"); };
   const startEdit = (b) => {
-    setForm({ date: b.date, time: b.time, services: [...b.services], notes: b.notes || "", price: b.price?.toString() || "" });
+    setForm({ date: b.date, time: b.time, services: [...b.services], notes: b.notes || "" });
     setEditId(b.id); setTab("book");
     setTimeout(() => { if (nameRef.current) nameRef.current.value = b.name; if (phoneRef.current) phoneRef.current.value = b.phone; }, 100);
   };
@@ -130,12 +139,6 @@ export default function App() {
   const updateClientField = (phone, field, value) => { const clients = data.clients.map(c => c.phone === phone ? { ...c, [field]: value } : c); save({ ...data, clients }); if (clientView) setClientView({ ...clientView, [field]: value }); flash("Saved!"); };
   const addWaitlist = () => { if (!waitForm.name || !waitForm.phone) { flash("Fill name & phone", "err"); return; } save({ ...data, waitlist: [...data.waitlist, { id: Date.now().toString(36), ...waitForm, addedAt: new Date().toISOString() }] }); setWaitForm({ name: "", phone: "", service: "", notes: "" }); flash("Added!"); };
   const removeWaitlist = (id) => { save({ ...data, waitlist: data.waitlist.filter(w => w.id !== id) }); };
-  const addPayment = (bId, name, phone, services, amount, method, notes) => {
-    const payment = { id: Date.now().toString(36) + Math.random().toString(36).slice(2, 5), bookingId: bId || "", name, phone: phone || "", services: services || [], amount: parseInt(amount), method, notes: notes || "", date: todayStr(), time: new Date().toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit", hour12: true }), createdAt: new Date().toISOString() };
-    save({ ...data, payments: [...data.payments, payment] });
-    flash("Payment recorded!");
-  };
-  const deletePayment = (id) => { save({ ...data, payments: data.payments.filter(p => p.id !== id) }); flash("Payment deleted"); };
 
   const now = new Date();
   const periodStart = dashPeriod === "week" ? daysAgo(7) : dashPeriod === "month" ? daysAgo(30) : daysAgo(365);
@@ -146,10 +149,13 @@ export default function App() {
   const topServices = Object.entries(svcCount).sort((a, b) => b[1] - a[1]);
   const dayCount = {}; periodBookings.forEach(b => { const day = new Date(b.date + "T00:00:00").toLocaleDateString("en-IN", { weekday: "short" }); dayCount[day] = (dayCount[day] || 0) + 1; });
   const busiestDay = Object.entries(dayCount).sort((a, b) => b[1] - a[1])[0];
-  const upcomingReminders = data.bookings.filter(b => { if (b.status !== "confirmed" || b.reminderSent) return false; const hrs = (new Date(`${b.date}T${b.time}:00`) - now) / 3600000; return hrs > 0 && hrs <= 15; });
+
+  const tomorrowBookings = data.bookings.filter(b => b.date === tomorrowStr() && b.status === "confirmed");
+  const todayBookings = data.bookings.filter(b => b.date === todayStr() && b.status === "confirmed");
+  const allUpcoming = [...tomorrowBookings, ...todayBookings.filter(b => !b.reminderSent)];
+
   const inactiveClients = data.clients.filter(c => c.lastVisit && (now - new Date(c.lastVisit + "T00:00:00")) / 86400000 >= 21);
   const todayBdays = data.clients.filter(c => { if (!c.birthday) return false; const [m, d] = c.birthday.split("-").slice(1); const t = todayStr().split("-"); return m === t[1] && d === t[2]; });
-  const todayBookings = data.bookings.filter(b => b.date === todayStr() && b.status === "confirmed");
   const filteredBookings = data.bookings.filter(b => { if (searchQ) { const q = searchQ.toLowerCase(); return b.name.toLowerCase().includes(q) || b.phone.includes(q); } return b.date === filterDate; });
 
   const accent = "#C75B3F";
@@ -162,7 +168,7 @@ export default function App() {
 
   const TABS = [
     ["book", "Book", "📅"], ["manage", "Manage", "📋"], ["reminders", "Alerts", "🔔"],
-    ["payments", "Payments", "💵"], ["dashboard", "Stats", "📊"], ["clients", "Clients", "👥"],
+    ["dashboard", "Stats", "📊"], ["clients", "Clients", "👥"],
     ["expenses", "Money", "💸"], ["promo", "Promo", "📣"], ["waitlist", "Waitlist", "⏳"]
   ];
 
@@ -234,18 +240,23 @@ export default function App() {
 
       {todayBdays.length > 0 && <div style={{ background: "#FEF3E2", borderRadius: 14, padding: "10px 16px", margin: "12px 0", fontSize: 13, color: "#B7791F", display: "flex", alignItems: "center", justifyContent: "space-between" }}><span>🎂 {todayBdays.map(c => firstName(c.name)).join(", ")}'s birthday!</span><MiniBtn bg="#B7791F" color="#fff" onClick={() => todayBdays.forEach(c => openWA(c.phone, getBdayMsg(c)))}>Send wish 🎀</MiniBtn></div>}
 
-      {todayBookings.length > 0 && tab !== "book" && <div style={{ background: accentLight, borderRadius: 14, padding: "12px 16px", margin: "8px 0 12px", fontSize: 13, color: accentDark }}>
+      {todayBookings.length > 0 && tab !== "book" && <div style={{ background: accentLight, borderRadius: 14, padding: "12px 16px", margin: "8px 0 4px", fontSize: 13, color: accentDark }}>
         <div style={{ fontWeight: 700, marginBottom: 4 }}>📌 Today — {todayBookings.length} appointment{todayBookings.length > 1 ? "s" : ""}</div>
         {todayBookings.map(b => <div key={b.id} style={{ fontSize: 12, opacity: 0.85, marginTop: 2 }}>{fmtTime(b.time)} — {firstName(b.name)} · {b.services.join(", ")}</div>)}
       </div>}
 
+      {tomorrowBookings.length > 0 && tab !== "book" && <div style={{ background: "#E6F0FB", borderRadius: 14, padding: "12px 16px", margin: "4px 0 12px", fontSize: 13, color: "#1A5FA5" }}>
+        <div style={{ fontWeight: 700, marginBottom: 4 }}>🔮 Tomorrow — {tomorrowBookings.length} appointment{tomorrowBookings.length > 1 ? "s" : ""}</div>
+        {tomorrowBookings.map(b => <div key={b.id} style={{ fontSize: 12, opacity: 0.85, marginTop: 2 }}>{fmtTime(b.time)} — {firstName(b.name)} · {b.services.join(", ")}</div>)}
+      </div>}
+
       <div style={{ display: "flex", gap: 4, padding: "14px 0", overflowX: "auto", scrollbarWidth: "none" }}>
         {TABS.map(([t, l, icon]) => (
-          <button key={t} onClick={() => { setTab(t); setSubTab(""); setClientView(null); if (t !== "book") { setEditId(null); setForm({ date: "", time: "", services: [], notes: "", price: "" }); } }}
-            style={{ padding: "10px 8px", borderRadius: 14, border: tab === t ? `2px solid ${accent}` : "1px solid #e8e0dc", background: tab === t ? accentLight : "transparent", color: tab === t ? accentDark : "#999", fontSize: 11, fontWeight: 600, cursor: "pointer", whiteSpace: "nowrap", minWidth: 48, textAlign: "center", position: "relative" }}>
+          <button key={t} onClick={() => { setTab(t); setSubTab(""); setClientView(null); if (t !== "book") { setEditId(null); setForm({ date: "", time: "", services: [], notes: "" }); } }}
+            style={{ padding: "10px 8px", borderRadius: 14, border: tab === t ? `2px solid ${accent}` : "1px solid #e8e0dc", background: tab === t ? accentLight : "transparent", color: tab === t ? accentDark : "#999", fontSize: 11, fontWeight: 600, cursor: "pointer", whiteSpace: "nowrap", minWidth: 52, textAlign: "center", position: "relative" }}>
             <div style={{ fontSize: 16 }}>{icon}</div>
             <div style={{ marginTop: 2 }}>{l}</div>
-            {t === "reminders" && upcomingReminders.length > 0 && <div style={{ position: "absolute", top: -2, right: -2, width: 8, height: 8, borderRadius: 4, background: "#E74C3C" }} />}
+            {t === "reminders" && allUpcoming.length > 0 && <div style={{ position: "absolute", top: -2, right: -2, width: 8, height: 8, borderRadius: 4, background: "#E74C3C" }} />}
           </button>
         ))}
       </div>
@@ -290,9 +301,8 @@ export default function App() {
             <div style={{ display: "flex", gap: 6, marginBottom: 10 }}>
               {["Morning", "Afternoon", "Evening"].map(p => {
                 const ranges = { Morning: [11, 13], Afternoon: [13, 17], Evening: [17, 21] };
-                const [s] = ranges[p];
                 const active = form.time && parseInt(form.time.split(":")[0]) >= ranges[p][0] && parseInt(form.time.split(":")[0]) < ranges[p][1];
-                return <button key={p} onClick={() => setForm({ ...form, time: `${s}:00` })} style={{ flex: 1, padding: "8px", borderRadius: 10, border: active ? `2px solid ${accent}` : "1px solid #e8e0dc", background: active ? accentLight : "transparent", color: active ? accentDark : "#999", fontSize: 12, fontWeight: 600, cursor: "pointer" }}>{p === "Morning" ? "🌅 Morning" : p === "Afternoon" ? "☀️ Afternoon" : "🌙 Evening"}</button>;
+                return <button key={p} onClick={() => setForm({ ...form, time: `${ranges[p][0]}:00` })} style={{ flex: 1, padding: "8px", borderRadius: 10, border: active ? `2px solid ${accent}` : "1px solid #e8e0dc", background: active ? accentLight : "transparent", color: active ? accentDark : "#999", fontSize: 12, fontWeight: 600, cursor: "pointer" }}>{p === "Morning" ? "🌅 Morning" : p === "Afternoon" ? "☀️ Afternoon" : "🌙 Evening"}</button>;
               })}
             </div>
             <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 6 }}>
@@ -308,7 +318,7 @@ export default function App() {
           </div>
 
           <Btn onClick={handleBook} disabled={!form.date || !form.time || form.services.length === 0}>{editId ? "Update Booking ✏️" : "Book & Send WhatsApp + Calendar 💅✨"}</Btn>
-          {editId && <div style={{ marginTop: 8 }}><Btn variant="outline" onClick={() => { setEditId(null); setForm({ date: "", time: "", services: [], notes: "", price: "" }); if (nameRef.current) nameRef.current.value = ""; if (phoneRef.current) phoneRef.current.value = ""; }}>Cancel Edit</Btn></div>}
+          {editId && <div style={{ marginTop: 8 }}><Btn variant="outline" onClick={() => { setEditId(null); setForm({ date: "", time: "", services: [], notes: "" }); if (nameRef.current) nameRef.current.value = ""; if (phoneRef.current) phoneRef.current.value = ""; }}>Cancel Edit</Btn></div>}
         </div>}
 
         {tab === "manage" && <div>
@@ -316,20 +326,18 @@ export default function App() {
             <input style={{ flex: 1, padding: "12px 14px", borderRadius: 12, border: "1px solid #e8e0dc", fontSize: 16, background: "#fff", color: "#333", outline: "none" }} placeholder="Search name or phone..." value={searchQ} onChange={e => setSearchQ(e.target.value)} />
             {!searchQ && <input style={{ width: 145, padding: "12px", borderRadius: 12, border: "1px solid #e8e0dc", fontSize: 13, background: "#fff", color: "#333" }} type="date" value={filterDate} onChange={e => setFilterDate(e.target.value)} />}
           </div>
-          <div style={{ fontSize: 12, color: "#999", marginBottom: 10, fontWeight: 500 }}>{searchQ ? `${filteredBookings.length} results` : `${fmtDateNice(filterDate)} — ${filteredBookings.length} bookings`}</div>
-          {filteredBookings.length === 0 && <div style={{ textAlign: "center", padding: "3rem 0", color: "#ccc", fontSize: 14 }}>No bookings found 💤</div>}
+          <div style={{ fontSize: 12, color: "#999", marginBottom: 10 }}>{searchQ ? `${filteredBookings.length} results` : `${fmtDateNice(filterDate)} — ${filteredBookings.length} bookings`}</div>
+          {filteredBookings.length === 0 && <div style={{ textAlign: "center", padding: "3rem 0", color: "#ccc" }}>No bookings found 💤</div>}
           {[...filteredBookings].sort((a, b) => a.time.localeCompare(b.time)).map(b => (
             <Card key={b.id}>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
                 <span style={{ fontSize: 16, fontWeight: 700, fontFamily: "'Georgia', serif" }}>{firstName(b.name)}</span>
                 <StatusBadge status={b.status} />
               </div>
-              <div style={{ fontSize: 13, color: "#888", lineHeight: 1.8 }}>
-                📱 {b.phone}<br />📅 {fmtDateShort(b.date)} · ⏰ {fmtTime(b.time)}<br />💅 {b.services.join(", ")}
-              </div>
+              <div style={{ fontSize: 13, color: "#888", lineHeight: 1.8 }}>📱 {b.phone}<br />📅 {fmtDateShort(b.date)} · ⏰ {fmtTime(b.time)}<br />💅 {b.services.join(", ")}</div>
               <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: 10 }}>
                 {b.status === "confirmed" && <MiniBtn bg="#E8F4ED" color="#2D6A4F" onClick={() => completeBooking(b)}>✓ Done + Thanks 💖</MiniBtn>}
-                <MiniBtn onClick={() => openWA(b.phone, getRemMsg(b))}>📩 Remind</MiniBtn>
+                <MiniBtn onClick={() => openWA(b.phone, getRemMsg(b, b.date === tomorrowStr()))}>📩 Remind</MiniBtn>
                 <MiniBtn bg="#FEF3E2" color="#B7791F" onClick={() => startEdit(b)}>✏️ Edit</MiniBtn>
                 {b.status === "confirmed" && <MiniBtn bg="#f5f0ed" color="#888" onClick={() => markStatus(b.id, "cancelled")}>Cancel</MiniBtn>}
                 {b.status === "confirmed" && <MiniBtn bg="#f5f0ed" color="#888" onClick={() => markStatus(b.id, "noshow")}>No-show</MiniBtn>}
@@ -347,23 +355,40 @@ export default function App() {
           </div>
 
           {(subTab === "" || subTab === "rem") && <div>
-            <SectionTitle sub="Clients with appointments in the next 15 hours">Due Reminders ({upcomingReminders.length})</SectionTitle>
-            {upcomingReminders.length === 0 && <div style={{ textAlign: "center", padding: "2rem 0", color: "#ccc" }}>No reminders due right now ✨</div>}
-            {upcomingReminders.map(b => {
-              const hrs = Math.round((new Date(`${b.date}T${b.time}:00`) - now) / 3600000);
-              return <Card key={b.id} glow>
-                <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 6 }}>
-                  <span style={{ fontWeight: 700, fontSize: 15, fontFamily: "'Georgia', serif" }}>{firstName(b.name)}</span>
-                  <span style={{ fontSize: 12, color: accent, fontWeight: 700 }}>in ~{hrs}h ⏰</span>
-                </div>
-                <div style={{ fontSize: 13, color: "#888", marginBottom: 10 }}>⏰ {fmtTime(b.time)} · {b.services.join(", ")}</div>
-                <Btn style={{ padding: "10px" }} onClick={() => { openWA(b.phone, getRemMsg(b)); save({ ...data, bookings: data.bookings.map(x => x.id === b.id ? { ...x, reminderSent: true } : x) }); flash("Sent!"); }}>Send Reminder via WhatsApp 📩</Btn>
-              </Card>;
-            })}
-            <div style={{ marginTop: 24 }}>
-              <SectionTitle>Today's Appointments ({todayBookings.length})</SectionTitle>
-              {todayBookings.map(b => <Card key={b.id}><div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}><div><div style={{ fontWeight: 600, fontSize: 14 }}>{firstName(b.name)}</div><div style={{ fontSize: 12, color: "#888" }}>{fmtTime(b.time)} · {b.services.join(", ")}</div></div>{b.reminderSent && <span style={{ fontSize: 11, color: "#2D6A4F", fontWeight: 600 }}>✓ Reminded</span>}</div></Card>)}
+            {tomorrowBookings.length > 0 && <div>
+              <SectionTitle sub="Send reminders for tomorrow's appointments">Tomorrow ({tomorrowBookings.length}) 🔮</SectionTitle>
+              {tomorrowBookings.map(b => (
+                <Card key={b.id} glow>
+                  <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 6 }}>
+                    <span style={{ fontWeight: 700, fontSize: 15, fontFamily: "'Georgia', serif" }}>{firstName(b.name)}</span>
+                    <span style={{ fontSize: 12, color: "#1A5FA5", fontWeight: 700 }}>Tomorrow ⏰</span>
+                  </div>
+                  <div style={{ fontSize: 13, color: "#888", marginBottom: 10 }}>⏰ {fmtTime(b.time)} · 💅 {b.services.join(", ")}</div>
+                  <Btn style={{ padding: "10px" }} onClick={() => { openWA(b.phone, getRemMsg(b, true)); save({ ...data, bookings: data.bookings.map(x => x.id === b.id ? { ...x, reminderSent: true } : x) }); flash("Sent! 📩"); }}>Send Reminder for Tomorrow 📩</Btn>
+                </Card>
+              ))}
+            </div>}
+
+            <div style={{ marginTop: tomorrowBookings.length > 0 ? 24 : 0 }}>
+              <SectionTitle sub="Today's confirmed appointments">Today ({todayBookings.length}) 📌</SectionTitle>
+              {todayBookings.length === 0 && <div style={{ textAlign: "center", padding: "1.5rem 0", color: "#ccc" }}>No appointments today ✨</div>}
+              {todayBookings.map(b => (
+                <Card key={b.id}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                    <div>
+                      <div style={{ fontWeight: 600, fontSize: 14 }}>{firstName(b.name)}</div>
+                      <div style={{ fontSize: 12, color: "#888" }}>{fmtTime(b.time)} · {b.services.join(", ")}</div>
+                    </div>
+                    <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                      {b.reminderSent && <span style={{ fontSize: 11, color: "#2D6A4F", fontWeight: 600 }}>✓ Reminded</span>}
+                      {!b.reminderSent && <MiniBtn onClick={() => { openWA(b.phone, getRemMsg(b, false)); save({ ...data, bookings: data.bookings.map(x => x.id === b.id ? { ...x, reminderSent: true } : x) }); flash("Sent!"); }}>📩</MiniBtn>}
+                    </div>
+                  </div>
+                </Card>
+              ))}
             </div>
+
+            {tomorrowBookings.length === 0 && todayBookings.length === 0 && <div style={{ textAlign: "center", padding: "2rem 0", color: "#ccc" }}>No reminders needed right now ✨</div>}
           </div>}
 
           {subTab === "thankyou" && <div>
@@ -418,157 +443,6 @@ export default function App() {
           </div>}
         </div>}
 
-        {tab === "payments" && <div>
-          <SectionTitle sub="Record daily payments & track monthly totals 💰">Payment Records</SectionTitle>
-          <div style={{ display: "flex", gap: 6, marginBottom: 16 }}>
-            {[["day", "Daily 📅"], ["month", "Monthly 📊"]].map(([k, l]) => (
-              <button key={k} onClick={() => setSubTab(k)} style={{ flex: 1, padding: "10px", borderRadius: 12, border: (subTab === k || (!subTab && k === "day")) ? `2px solid ${accent}` : "1px solid #e8e0dc", background: (subTab === k || (!subTab && k === "day")) ? accentLight : "transparent", color: (subTab === k || (!subTab && k === "day")) ? accentDark : "#999", fontSize: 13, fontWeight: 600, cursor: "pointer" }}>{l}</button>
-            ))}
-          </div>
-
-          {(subTab === "" || subTab === "day") && <div>
-            <Card style={{ background: cream, border: "none", marginBottom: 16 }}>
-              <div style={{ fontSize: 12, fontWeight: 600, color: "#888", textTransform: "uppercase", letterSpacing: 0.8, marginBottom: 10 }}>Record a payment 💵</div>
-              <div style={{ marginBottom: 10 }}>
-                <label style={{ fontSize: 11, fontWeight: 600, color: "#888", marginBottom: 4, display: "block" }}>Client (from today's bookings)</label>
-                <select style={{ width: "100%", padding: "12px", borderRadius: 12, border: "1px solid #e8e0dc", fontSize: 13, background: "#fff", color: "#333" }} value={payForm.bookingId} onChange={e => {
-                  const bk = data.bookings.find(b => b.id === e.target.value);
-                  if (bk) setPayForm({ ...payForm, bookingId: e.target.value, amount: bk.price?.toString() || "" });
-                  else setPayForm({ ...payForm, bookingId: e.target.value });
-                }}>
-                  <option value="">Select or add manually below</option>
-                  {data.bookings.filter(b => b.date === todayStr()).map(b => <option key={b.id} value={b.id}>{firstName(b.name)} — {b.services.join(", ")}</option>)}
-                </select>
-              </div>
-              {!payForm.bookingId && <Input label="Client name (manual)" placeholder="Name" value={payForm.notes} onChange={e => setPayForm({ ...payForm, notes: e.target.value })} />}
-              <div style={{ display: "flex", gap: 8, marginBottom: 10 }}>
-                <div style={{ flex: 1 }}>
-                  <label style={{ fontSize: 11, fontWeight: 600, color: "#888", marginBottom: 4, display: "block" }}>Amount 💰</label>
-                  <input style={{ width: "100%", padding: "12px", borderRadius: 12, border: "1px solid #e8e0dc", fontSize: 16, background: "#fff", color: "#333", boxSizing: "border-box" }} placeholder="₹" type="number" inputMode="numeric" value={payForm.amount} onChange={e => setPayForm({ ...payForm, amount: e.target.value })} />
-                </div>
-                <div style={{ flex: 1 }}>
-                  <label style={{ fontSize: 11, fontWeight: 600, color: "#888", marginBottom: 4, display: "block" }}>Method</label>
-                  <select style={{ width: "100%", padding: "12px", borderRadius: 12, border: "1px solid #e8e0dc", fontSize: 13, background: "#fff", color: "#333" }} value={payForm.method} onChange={e => setPayForm({ ...payForm, method: e.target.value })}>
-                    <option value="cash">💵 Cash</option>
-                    <option value="upi">📱 UPI</option>
-                    <option value="card">💳 Card</option>
-                    <option value="other">🔄 Other</option>
-                  </select>
-                </div>
-              </div>
-              <Btn onClick={() => {
-                if (!payForm.amount) { flash("Enter amount", "err"); return; }
-                const bk = data.bookings.find(b => b.id === payForm.bookingId);
-                const name = bk ? bk.name : (payForm.notes || "Walk-in");
-                const phone = bk ? bk.phone : "";
-                const services = bk ? bk.services : [];
-                addPayment(payForm.bookingId, name, phone, services, payForm.amount, payForm.method, payForm.notes);
-                setPayForm({ bookingId: "", amount: "", method: "cash", notes: "" });
-              }}>Record Payment ✅</Btn>
-            </Card>
-
-            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12 }}>
-              <span style={{ fontSize: 14, fontWeight: 700, fontFamily: "'Georgia', serif" }}>Daily view 📅</span>
-              <input style={{ padding: "8px 12px", borderRadius: 10, border: "1px solid #e8e0dc", fontSize: 13, background: "#fff", color: "#333" }} type="date" value={payDay} onChange={e => setPayDay(e.target.value)} />
-            </div>
-
-            {(() => {
-              const dayPayments = data.payments.filter(p => p.date === payDay);
-              const dayTotal = dayPayments.reduce((s, p) => s + p.amount, 0);
-              const cashTotal = dayPayments.filter(p => p.method === "cash").reduce((s, p) => s + p.amount, 0);
-              const upiTotal = dayPayments.filter(p => p.method === "upi").reduce((s, p) => s + p.amount, 0);
-              const cardTotal = dayPayments.filter(p => p.method === "card").reduce((s, p) => s + p.amount, 0);
-              return <>
-                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8, marginBottom: 16 }}>
-                  <Metric icon="💵" value={`₹${cashTotal.toLocaleString()}`} label="Cash" />
-                  <Metric icon="📱" value={`₹${upiTotal.toLocaleString()}`} label="UPI" />
-                  <Metric icon="💳" value={`₹${cardTotal.toLocaleString()}`} label="Card" />
-                </div>
-                <div style={{ background: accentLight, borderRadius: 14, padding: "14px 18px", marginBottom: 16, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                  <span style={{ fontSize: 14, fontWeight: 600, color: accentDark }}>Day total 💰</span>
-                  <span style={{ fontSize: 22, fontWeight: 700, color: accent, fontFamily: "'Georgia', serif" }}>₹{dayTotal.toLocaleString()}</span>
-                </div>
-                {dayPayments.length === 0 && <div style={{ textAlign: "center", padding: "2rem 0", color: "#ccc" }}>No payments recorded 💤</div>}
-                {dayPayments.map(p => (
-                  <Card key={p.id}>
-                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 4 }}>
-                      <span style={{ fontSize: 15, fontWeight: 700, fontFamily: "'Georgia', serif" }}>{firstName(p.name)}</span>
-                      <span style={{ fontSize: 16, fontWeight: 700, color: accent }}>₹{p.amount.toLocaleString()}</span>
-                    </div>
-                    {p.services?.length > 0 && <div style={{ fontSize: 12, color: "#888", marginBottom: 2 }}>💅 {p.services.join(", ")}</div>}
-                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                      <div style={{ fontSize: 12, color: "#888" }}>
-                        <span style={{ padding: "2px 8px", borderRadius: 8, background: p.method === "cash" ? "#E8F4ED" : p.method === "upi" ? "#E6F0FB" : "#FEF3E2", color: p.method === "cash" ? "#2D6A4F" : p.method === "upi" ? "#1A5FA5" : "#B7791F", fontSize: 11, fontWeight: 600 }}>{p.method === "cash" ? "💵 Cash" : p.method === "upi" ? "📱 UPI" : p.method === "card" ? "💳 Card" : "🔄 Other"}</span>
-                        <span style={{ marginLeft: 8 }}>{p.time}</span>
-                      </div>
-                      <MiniBtn bg="#FCE8E8" color="#C0392B" onClick={() => deletePayment(p.id)} style={{ fontSize: 10 }}>×</MiniBtn>
-                    </div>
-                  </Card>
-                ))}
-              </>;
-            })()}
-          </div>}
-
-          {subTab === "month" && <div>
-            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16 }}>
-              <span style={{ fontSize: 14, fontWeight: 700, fontFamily: "'Georgia', serif" }}>Monthly summary 📊</span>
-              <input style={{ padding: "8px 12px", borderRadius: 10, border: "1px solid #e8e0dc", fontSize: 13, background: "#fff", color: "#333" }} type="month" value={payMonth} onChange={e => setPayMonth(e.target.value)} />
-            </div>
-            {(() => {
-              const monthPayments = data.payments.filter(p => p.date.startsWith(payMonth));
-              const monthTotal = monthPayments.reduce((s, p) => s + p.amount, 0);
-              const cashTotal = monthPayments.filter(p => p.method === "cash").reduce((s, p) => s + p.amount, 0);
-              const upiTotal = monthPayments.filter(p => p.method === "upi").reduce((s, p) => s + p.amount, 0);
-              const cardTotal = monthPayments.filter(p => p.method === "card").reduce((s, p) => s + p.amount, 0);
-              const monthExpenses = data.expenses.filter(e => e.date.startsWith(payMonth)).reduce((s, e) => s + e.amount, 0);
-              const dayWise = {};
-              monthPayments.forEach(p => { if (!dayWise[p.date]) dayWise[p.date] = { payments: [], total: 0 }; dayWise[p.date].payments.push(p); dayWise[p.date].total += p.amount; });
-              const sortedDays = Object.keys(dayWise).sort().reverse();
-              return <>
-                <Card style={{ background: accentLight, border: "none", marginBottom: 16, textAlign: "center" }}>
-                  <div style={{ fontSize: 13, fontWeight: 600, color: accentDark, marginBottom: 4 }}>Total revenue this month 💰</div>
-                  <div style={{ fontSize: 32, fontWeight: 700, color: accent, fontFamily: "'Georgia', serif" }}>₹{monthTotal.toLocaleString()}</div>
-                  <div style={{ display: "flex", justifyContent: "center", gap: 16, marginTop: 10, fontSize: 13 }}>
-                    <span style={{ color: "#2D6A4F", fontWeight: 600 }}>- ₹{monthExpenses.toLocaleString()}</span>
-                    <span style={{ color: accent, fontWeight: 700 }}>= ₹{(monthTotal - monthExpenses).toLocaleString()} profit ✨</span>
-                  </div>
-                </Card>
-                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8, marginBottom: 16 }}>
-                  <Metric icon="💵" value={`₹${cashTotal.toLocaleString()}`} label="Cash" />
-                  <Metric icon="📱" value={`₹${upiTotal.toLocaleString()}`} label="UPI" />
-                  <Metric icon="💳" value={`₹${cardTotal.toLocaleString()}`} label="Card" />
-                </div>
-                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 20 }}>
-                  <Metric value={monthPayments.length} label="Total payments" />
-                  <Metric value={monthPayments.length ? `₹${Math.round(monthTotal / monthPayments.length)}` : "-"} label="Avg per client" />
-                </div>
-                <div style={{ fontSize: 14, fontWeight: 700, fontFamily: "'Georgia', serif", marginBottom: 12 }}>Day-by-day breakdown 📋</div>
-                {sortedDays.length === 0 && <div style={{ textAlign: "center", padding: "2rem 0", color: "#ccc" }}>No payments this month 💤</div>}
-                {sortedDays.map(day => (
-                  <Card key={day}>
-                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
-                      <span style={{ fontSize: 14, fontWeight: 700, fontFamily: "'Georgia', serif" }}>{fmtDateShort(day)}</span>
-                      <span style={{ fontSize: 16, fontWeight: 700, color: accent }}>₹{dayWise[day].total.toLocaleString()}</span>
-                    </div>
-                    {dayWise[day].payments.map(p => (
-                      <div key={p.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "6px 0", borderTop: "0.5px solid #e8e0dc" }}>
-                        <div>
-                          <span style={{ fontSize: 13, fontWeight: 600 }}>{firstName(p.name)}</span>
-                          {p.services?.length > 0 && <span style={{ fontSize: 11, color: "#888", marginLeft: 6 }}>{p.services.join(", ")}</span>}
-                        </div>
-                        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                          <span style={{ padding: "2px 6px", borderRadius: 6, fontSize: 10, fontWeight: 600, background: p.method === "cash" ? "#E8F4ED" : p.method === "upi" ? "#E6F0FB" : "#FEF3E2", color: p.method === "cash" ? "#2D6A4F" : p.method === "upi" ? "#1A5FA5" : "#B7791F" }}>{p.method}</span>
-                          <span style={{ fontSize: 14, fontWeight: 700, color: accent }}>₹{p.amount.toLocaleString()}</span>
-                        </div>
-                      </div>
-                    ))}
-                  </Card>
-                ))}
-              </>;
-            })()}
-          </div>}
-        </div>}
-
         {tab === "dashboard" && <div>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
             <SectionTitle>Dashboard 📊</SectionTitle>
@@ -588,7 +462,7 @@ export default function App() {
             <Metric value={periodBookings.length ? `₹${Math.round(periodRevenue / periodBookings.length)}` : "-"} label="Avg per visit" />
             <Metric value={data.clients.length} label="Total clients" />
           </div>
-          {topServices.length > 0 && <Card><div style={{ fontSize: 14, fontWeight: 700, marginBottom: 12, fontFamily: "'Georgia', serif" }}>Top services 💅</div>{topServices.slice(0, 5).map(([name, count]) => <div key={name} style={{ marginBottom: 10 }}><div style={{ display: "flex", justifyContent: "space-between", fontSize: 13, marginBottom: 4 }}><span>{name}</span><span style={{ color: "#888", fontWeight: 600 }}>{count}x</span></div><div style={{ height: 8, borderRadius: 4, background: "#f0ebe8" }}><div style={{ height: 8, borderRadius: 4, background: `linear-gradient(90deg, ${accent}, #D4724F)`, width: `${count / topServices[0][1] * 100}%`, transition: "width 0.5s" }} /></div></div>)}</Card>}
+          {topServices.length > 0 && <Card><div style={{ fontSize: 14, fontWeight: 700, marginBottom: 12, fontFamily: "'Georgia', serif" }}>Top services 💅</div>{topServices.slice(0, 5).map(([name, count]) => <div key={name} style={{ marginBottom: 10 }}><div style={{ display: "flex", justifyContent: "space-between", fontSize: 13, marginBottom: 4 }}><span>{name}</span><span style={{ color: "#888", fontWeight: 600 }}>{count}x</span></div><div style={{ height: 8, borderRadius: 4, background: "#f0ebe8" }}><div style={{ height: 8, borderRadius: 4, background: `linear-gradient(90deg, ${accent}, #D4724F)`, width: `${count / topServices[0][1] * 100}%` }} /></div></div>)}</Card>}
           {busiestDay && <div style={{ fontSize: 14, color: "#888", marginTop: 8 }}>📊 Busiest day: <strong style={{ color: "#333" }}>{busiestDay[0]}</strong> ({busiestDay[1]} bookings)</div>}
         </div>}
 
@@ -686,7 +560,7 @@ export default function App() {
             {w.service && <div style={{ fontSize: 13, color: "#888", marginBottom: 2 }}>Wants: {w.service}</div>}
             {w.notes && <div style={{ fontSize: 12, color: "#aaa", marginBottom: 8 }}>{w.notes}</div>}
             <div style={{ display: "flex", gap: 6 }}>
-              <MiniBtn bg="#E8F4ED" color="#2D6A4F" onClick={() => { setForm({ date: "", time: "", services: w.service ? [w.service] : [], notes: w.notes || "", price: "" }); setTab("book"); setTimeout(() => { if (nameRef.current) nameRef.current.value = w.name; if (phoneRef.current) phoneRef.current.value = w.phone; }, 100); }}>Book now 💅</MiniBtn>
+              <MiniBtn bg="#E8F4ED" color="#2D6A4F" onClick={() => { setForm({ date: "", time: "", services: w.service ? [w.service] : [], notes: w.notes || "" }); setTab("book"); setTimeout(() => { if (nameRef.current) nameRef.current.value = w.name; if (phoneRef.current) phoneRef.current.value = w.phone; }, 100); }}>Book now 💅</MiniBtn>
               <MiniBtn onClick={() => openWA(w.phone, `Hi ${firstName(w.name)}! 🌸✨\n\nA slot has opened up at *The Nail Villa*! Would you like to book it? 💅💖\n\nLet us know your preferred date & time! 🎀`)}>Notify 📩</MiniBtn>
               <MiniBtn bg="#FCE8E8" color="#C0392B" onClick={() => removeWaitlist(w.id)}>Remove</MiniBtn>
             </div>
